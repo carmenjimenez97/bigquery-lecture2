@@ -1,0 +1,451 @@
+---
+title: "BigQuery SQL Lecture 2: Intermediate/Advanced BigQuery for GA4"
+subtitle: "IC/CP-W05 | MS in Digital Marketing & Analytics"
+author: "Carmen Lia Jimenez Rodriguez"
+date: "2026-11-05"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    number-sections: true
+editor: visual
+---
+
+# Introduction
+
+This report documents the SQL queries covered in Lecture 2, focusing on intermediate and advanced BigQuery techniques for analyzing Google Analytics 4 (GA4) data.
+
+Each section includes the SQL query, an explanation of its purpose, and a screenshot of the results obtained from Google BigQuery.
+
+**Course:** BM 6500 - Customer Insights Methods and Survey Research
+
+**Professor:** Dr. Jae Min Jung
+
+# Query 1: CTEs (WITH) - Total Users and New Users
+
+## Purpose
+
+This query uses a Common Table Expression (CTE) to calculate the total number of users and identify new users in the GA4 dataset during November 2020.
+
+## SQL Query
+
+``` sql
+WITH UserInfo AS (
+  SELECT
+    user_pseudo_id,
+    MAX(
+      IF(event_name IN ('first_visit', 'first_open'), 1, 0)
+    ) AS is_new_user
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE _TABLE_SUFFIX BETWEEN '20201101' AND '20201130'
+  GROUP BY user_pseudo_id
+)
+
+SELECT
+  COUNT(*) AS total_users,
+  SUM(is_new_user) AS new_users
+FROM UserInfo;
+```
+
+## Explanation
+
+The WITH clause creates a temporary named result called UserInfo. Each user is identified by user_pseudo_id, while the IF function checks whether the user triggered a first_visit or first_open event. The MAX function ensures that each user is counted as new only once. Finally, the query calculates the total number of users and the number of new users.
+
+## Results
+
+The query returned 79,421 total users and 71,734 new users for November 2020.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-1070643769.png)
+
+# Query 2: Arrays + UNNEST (Pattern A)
+
+## Purpose
+
+This query extracts the page URLs associated with page_view events in the GA4 dataset for December 1–2, 2020.
+
+## SQL Query
+
+``` sql
+SELECT
+  TIMESTAMP_MICROS(event_timestamp) AS event_time,
+  (
+    SELECT value.string_value
+    FROM UNNEST(event_params)
+    WHERE key = 'page_location'
+    LIMIT 1
+  ) AS page_location
+FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+WHERE event_name = 'page_view'
+  AND _TABLE_SUFFIX BETWEEN '20201201' AND '20201202'
+LIMIT 50;
+```
+
+## Explanation
+
+The TIMESTAMP_MICROS function converts event timestamps into readable dates and times. The UNNEST function accesses the event_params array, while the scalar subquery extracts the page_location parameter without creating additional rows. The WHERE clause filters page_view events from December 1–2, 2020, and LIMIT restricts the output to 50 records.
+
+## Results
+
+The query successfully returned 50 page_view records, displaying the event timestamp and the corresponding page URL.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-841643591.png)
+
+# Query 3: Arrays + UNNEST (Pattern B)
+
+## Purpose
+
+This query analyzes purchased products in the GA4 ecommerce dataset during December 2020. It identifies the products that appear most frequently in purchase records, grouped by date and product name.
+
+## SQL Query
+
+``` sql
+SELECT
+  event_date,
+  item.item_name,
+  COUNT(*) AS item_rows
+FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` AS e,
+UNNEST(e.items) AS item
+WHERE e.event_name = 'purchase'
+  AND _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+GROUP BY event_date, item.item_name
+ORDER BY item_rows DESC
+LIMIT 20;
+```
+
+## Explanation
+
+The UNNEST function transforms the items array into individual product rows, allowing item-level analysis. The WHERE clause selects purchase events from December 2020. The GROUP BY clause organizes the records by date and product name, while COUNT(\*) calculates the number of item rows for each combination. Finally, ORDER BY sorts the results from highest to lowest, and LIMIT displays the top 20 combinations.
+
+## Results
+
+The query successfully returned the top 20 product-date combinations based on item-row frequency. The highest-ranked result was Gift Card - \$25.00, with 28 item rows on December 10, 2020, followed by Google Camp Mug Ivory with 24 item rows on December 9, 2020.
+
+These counts represent item rows within purchase events, rather than the total quantity of units sold.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-739020978.png)
+
+# Query 4: STRING_AGG - Event Names by Day
+
+## Purpose
+
+This query identifies the different types of GA4 events recorded each day from December 1 to December 3, 2020, and combines them into a single list for each date.
+
+## SQL Query
+
+``` sql
+SELECT
+  event_date,
+  STRING_AGG(
+    DISTINCT event_name,
+    ', ' ORDER BY event_name
+  ) AS events_seen
+FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+WHERE _TABLE_SUFFIX BETWEEN '20201201' AND '20201203'
+GROUP BY event_date
+ORDER BY event_date;
+```
+
+## Explanation
+
+The STRING_AGG function combines multiple event names into a comma-separated list. DISTINCT removes duplicate event names within each day, while ORDER BY inside STRING_AGG arranges them alphabetically. GROUP BY organizes the results by event_date, producing one row per day.
+
+## Results
+
+The query successfully returned daily lists of distinct GA4 events for the selected period. The results include events such as add_to_cart, begin_checkout, page_view, and purchase, providing an overview of the different user interactions recorded on each date.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-2748828450.png)
+
+# Query 5: ARRAY_AGG - Items Added to Cart
+
+## Purpose
+
+This query creates a list of products added to the shopping cart by each user during December 2020. It demonstrates how ARRAY_AGG can combine multiple product names into a single array for each user.
+
+## SQL Query
+
+``` sql
+SELECT
+  user_pseudo_id,
+  ARRAY_AGG(item.item_name) AS items_added_to_cart
+FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*` AS e,
+UNNEST(e.items) AS item
+WHERE e.event_name = 'add_to_cart'
+  AND _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+GROUP BY user_pseudo_id
+ORDER BY user_pseudo_id
+LIMIT 10;
+```
+
+## Explanation
+
+The UNNEST function expands the items array to access individual products associated with add_to_cart events. ARRAY_AGG combines these product names into an array for each user. The WHERE clause filters add_to_cart events from December 2020, while GROUP BY organizes the results by user_pseudo_id. Finally, LIMIT restricts the output to 10 users.
+
+## Results
+
+The query successfully returned 10 users and their corresponding lists of products added to the shopping cart. The results include products such as Google Speckled Beanie Navy, Google Youth FC Tee Charcoal, and Android Iconic Hat Green.
+
+This analysis provides insight into shopping cart activity at the user level rather than the session level.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-774276031.png)
+
+# Query 6: ARRAY_AGG - Session-Level Cart Summary
+
+## Purpose
+
+This query summarizes the items added to shopping carts during individual user sessions. It combines CTEs, UNNEST, STRUCT, and ARRAY_AGG to organize ecommerce activity at the session level.
+
+## SQL Query
+
+``` sql
+WITH add_to_cart AS (
+  SELECT
+    user_pseudo_id,
+    (
+      SELECT value.int_value
+      FROM UNNEST(event_params)
+      WHERE key = 'ga_session_id'
+    ) AS session_id,
+    TIMESTAMP_MICROS(event_timestamp) AS event_timestamp,
+    i.item_id,
+    i.item_name,
+    i.quantity,
+    i.price
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`,
+  UNNEST(items) AS i
+  WHERE event_name = 'add_to_cart'
+    AND _TABLE_SUFFIX BETWEEN '20210101' AND '20211231'
+)
+
+SELECT
+  user_pseudo_id,
+  session_id,
+  COUNT(*) AS total_add_to_cart_events,
+  ARRAY_AGG(
+    STRUCT(item_id, item_name, quantity, price, event_timestamp)
+    ORDER BY quantity DESC, event_timestamp ASC
+    LIMIT 10
+  ) AS cart_items
+FROM add_to_cart
+WHERE session_id IS NOT NULL
+GROUP BY user_pseudo_id, session_id;
+```
+
+## Explanation
+
+The WITH clause creates a CTE named add_to_cart. UNNEST expands the product arrays and extracts the session identifier from event parameters. STRUCT combines product attributes, including item ID, name, quantity, price, and timestamp. ARRAY_AGG groups these details into an array for each user session, while ORDER BY prioritizes higher quantities and earlier timestamps.
+
+The COUNT(\*) function counts item-level rows associated with add_to_cart events, rather than necessarily counting distinct add_to_cart events.
+
+## Results
+
+The query is designed to display user IDs, session IDs, item-level add-to-cart counts, and structured product information for each session.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-740061704.png)
+
+# Query 7: LEFT JOIN - Daily Users and Purchases
+
+## Purpose
+
+This query combines daily user activity and purchase transactions from the GA4 dataset to analyze ecommerce performance during December 2020.
+
+## SQL Query
+
+``` sql
+WITH daily_users AS (
+  SELECT
+    event_date,
+    COUNT(DISTINCT user_pseudo_id) AS users
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+  GROUP BY event_date
+),
+
+daily_purchases AS (
+  SELECT
+    event_date,
+    COUNT(DISTINCT
+      (SELECT value.string_value
+       FROM UNNEST(event_params)
+       WHERE key = 'transaction_id')
+    ) AS purchases
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE event_name = 'purchase'
+    AND _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+  GROUP BY event_date
+)
+
+SELECT
+  u.event_date,
+  u.users,
+  IFNULL(p.purchases, 0) AS purchases,
+  ROUND(
+    IFNULL(p.purchases, 0) / NULLIF(u.users, 0) * 100, 2
+  ) AS conversion_rate_pct
+FROM daily_users u
+LEFT JOIN daily_purchases p
+  ON u.event_date = p.event_date
+ORDER BY u.event_date;
+```
+
+## Explanation
+
+The query uses two Common Table Expressions (CTEs). The first calculates the number of unique users per day, while the second counts distinct purchase transactions. A LEFT JOIN combines both datasets using event_date, ensuring that dates with no purchases remain in the results.
+
+IFNULL replaces missing purchase counts with zero, while NULLIF prevents division by zero. ROUND formats the transaction-to-user percentage to two decimal places.
+
+## Results
+
+The query successfully returned 31 daily records for December 2020.
+
+On December 1, there were 4,308 users and 96 purchase transactions, resulting in a transaction-to-user ratio of 2.23%. On December 2, there were 4,101 users and 77 transactions, representing 1.88%.
+
+These percentages represent the number of transactions per 100 users, rather than the exact percentage of unique users who made a purchase.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-3756246670.png)
+
+# Query 8: Window Functions + QUALIFY
+
+## Purpose
+
+This query identifies the three most frequent GA4 event types per day from December 1 to December 7, 2020, using window functions and ranking.
+
+## SQL Query
+
+``` sql
+WITH daily_event_counts AS (
+  SELECT
+    event_date,
+    event_name,
+    COUNT(*) AS events
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE _TABLE_SUFFIX BETWEEN '20201201' AND '20201207'
+  GROUP BY event_date, event_name
+)
+
+SELECT
+  event_date,
+  event_name,
+  events,
+  RANK() OVER (
+    PARTITION BY event_date
+    ORDER BY events DESC
+  ) AS rnk
+FROM daily_event_counts
+QUALIFY rnk <= 3
+ORDER BY event_date, rnk;
+```
+
+## Explanation
+
+The Common Table Expression (CTE) calculates the total number of occurrences for each event type on each day. The RANK() window function assigns a ranking based on event frequency, while PARTITION BY restarts the ranking for each date. QUALIFY filters the results to retain only the three highest ranks per day.
+
+## Results
+
+The query successfully returned 21 records covering seven days.
+
+On December 1, 2020, page_view was the most frequent event with 21,511 occurrences, followed by user_engagement with 19,069 and scroll with 8,629. These results help identify the most common user interactions recorded in GA4.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-3613043081.png)
+
+# Query 9: Rolling 7-Day Average of Daily Purchases
+
+## Purpose
+
+This query calculates the daily number of purchase events and their seven-day moving average during December 2020. It helps identify trends in ecommerce activity by smoothing daily fluctuations.
+
+## SQL Query
+
+``` sql
+WITH daily_purchases AS (
+  SELECT
+    PARSE_DATE('%Y%m%d', event_date) AS dt,
+    COUNT(*) AS purchases
+  FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+  WHERE event_name = 'purchase'
+    AND _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+  GROUP BY dt
+)
+
+SELECT
+  dt,
+  purchases,
+  AVG(purchases) OVER (
+    ORDER BY dt
+    ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+  ) AS purchases_7d_avg
+FROM daily_purchases
+ORDER BY dt;
+```
+
+## Explanation
+
+The CTE calculates the number of purchase events for each date. PARSE_DATE converts event_date into a date format, while COUNT(\*) counts the daily purchase events.
+
+The AVG() window function calculates a moving average using the current row and up to six preceding rows. This helps smooth daily fluctuations and provides a clearer view of purchasing trends.
+
+## Results
+
+The query successfully returned 31 daily records for December 2020.
+
+On December 1, there were 107 purchase events, resulting in an initial moving average of 107.00. On December 2, the number of purchases decreased to 82, producing a moving average of 94.50. By December 4, the moving average was 93.75.
+
+The first six records use fewer than seven observations because there are not yet enough preceding dates.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-4125713846.png)
+
+# Query 10: APPROX_COUNT_DISTINCT - Users by Event Type
+
+## Purpose
+
+This query estimates the number of unique users associated with each GA4 event type during December 2020. It demonstrates how approximate aggregation functions can efficiently analyze large datasets.
+
+## SQL Query
+
+``` sql
+SELECT
+  event_name,
+  APPROX_COUNT_DISTINCT(user_pseudo_id) AS approx_users
+FROM `bigquery-public-data.ga4_obfuscated_sample_ecommerce.events_*`
+WHERE _TABLE_SUFFIX BETWEEN '20201201' AND '20201231'
+GROUP BY event_name
+ORDER BY approx_users DESC
+LIMIT 15;
+```
+
+## Explanation
+
+The APPROX_COUNT_DISTINCT function estimates the number of unique user_pseudo_id values associated with each event type. The WHERE clause restricts the analysis to December 2020, while GROUP BY organizes the results by event_name.
+
+ORDER BY sorts the events according to their estimated number of users, from highest to lowest. LIMIT restricts the output to the top 15 events.
+
+Unlike COUNT(DISTINCT), APPROX_COUNT_DISTINCT provides an approximate result and can be more efficient when analyzing large datasets.
+
+## Results
+
+The query successfully returned 15 event types ranked by their approximate number of unique users.
+
+Among the results, scroll had approximately 49,664 users, view_promotion had 38,659, and view_item had 22,931. The add_to_cart event had approximately 7,109 users.
+
+These findings help identify common user interactions and compare engagement across different GA4 events.
+
+## BigQuery Output Screenshot
+
+![](images/clipboard-2887667088.png)
