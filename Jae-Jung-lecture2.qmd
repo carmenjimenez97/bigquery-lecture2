@@ -449,3 +449,19 @@ These findings help identify common user interactions and compare engagement acr
 ## BigQuery Output Screenshot
 
 ![](images/clipboard-2887667088.png)
+
+
+
+# Appendix: GitHub Publication Links
+
+The complete BigQuery SQL Lecture 2 report and its supporting files are available through the following links:
+
+## Published Report - GitHub Pages
+
+[View the Published HTML Report](https://carmenjimenez97.github.io/bigquery-lecture2/Jae-Jung-lecture2.html)
+
+## GitHub Repository
+
+[View the GitHub Repository](https://github.com/carmenjimenez97/bigquery-lecture2)
+
+
